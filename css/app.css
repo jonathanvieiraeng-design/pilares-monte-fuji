@@ -249,6 +249,9 @@ a { color: inherit; text-decoration: none; }
 .ponto-st.st-conferido { background: var(--st-conferido); }
 .ponto-st.st-concluido { background: var(--st-concluido); }
 .ponto-st.sem-foto { border: 2px dashed var(--st-conferido-borda); }
+.chip-sem-foto { color: var(--st-conferido-borda); }
+.chip-sem-foto .ponto-st.sem-foto { width: 13px; height: 13px; }
+.chip-sem-foto .icone { width: 15px; height: 15px; margin-left: -1px; }
 
 .vazio {
   padding: 32px 16px;

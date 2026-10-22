@@ -448,11 +448,16 @@ async function telaTeto(id) {
 
   function atualizarResumo() {
     const r = resumo(pilares);
-    resumoEl.replaceChildren(
-      ...ORDEM_STATUS.map((st) => el('span', { class: 'chip', title: STATUS[st].rotulo },
-        el('span', { class: `ponto-st st-${st}` }), String(r[st]))),
-      el('span', { class: 'chip chip-pct' }, `${r.pct}%`),
-    );
+    // pilares com check e sem foto continuam cinza (contados em "pendente"),
+    // mas ganham um contador próprio para não serem esquecidos
+    const semFoto = pilares.filter(checkSemFoto).length;
+    const chips = ORDEM_STATUS.map((st) => el('span', { class: 'chip', title: STATUS[st].rotulo },
+      el('span', { class: `ponto-st st-${st}` }), String(r[st])));
+    if (semFoto) {
+      chips.splice(1, 0, el('span', { class: 'chip chip-sem-foto', title: 'Check feito, falta a foto' },
+        el('span', { class: 'ponto-st st-pendente sem-foto' }), icone('camera'), String(semFoto)));
+    }
+    resumoEl.replaceChildren(...chips, el('span', { class: 'chip chip-pct' }, `${r.pct}%`));
   }
 
   function definirModo(m) {
@@ -755,6 +760,12 @@ async function telaTeto(id) {
   function renderLista() {
     const r = resumo(pilares);
     const filtros = [['todos', 'Todos', r.total], ...ORDEM_STATUS.map((st) => [st, STATUS[st].rotulo, r[st]])];
+    filtros.splice(2, 0, ['semfoto', 'Falta foto', pilares.filter(checkSemFoto).length]);
+    const ponto = (chave) => {
+      if (chave === 'todos') return null;
+      if (chave === 'semfoto') return el('span', { class: 'ponto-st st-pendente sem-foto' });
+      return el('span', { class: `ponto-st st-${chave}` });
+    };
     filtrosEl.replaceChildren(...filtros.map(([chave, rotulo, n]) => el('button', {
       type: 'button',
       class: `filtro${lista.filtro === chave ? ' ativo' : ''}`,
@@ -762,14 +773,18 @@ async function telaTeto(id) {
         lista.filtro = chave;
         renderLista();
       },
-    }, chave !== 'todos' ? el('span', { class: `ponto-st st-${chave}` }) : null, `${rotulo} ${n}`)));
+    }, ponto(chave), `${rotulo} ${n}`)));
     renderItensLista();
   }
 
   function renderItensLista() {
     const termo = limparNome(lista.busca);
     const visiveis = pilares
-      .filter((p) => lista.filtro === 'todos' || statusDo(p) === lista.filtro)
+      .filter((p) => {
+        if (lista.filtro === 'todos') return true;
+        if (lista.filtro === 'semfoto') return checkSemFoto(p);
+        return statusDo(p) === lista.filtro;
+      })
       .filter((p) => !termo || limparNome(p.nome).includes(termo))
       .sort((a, b) => compararNatural(a.nome, b.nome));
     if (!visiveis.length) {
