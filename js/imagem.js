@@ -1,13 +1,28 @@
-// PNG da planta com os pilares coloridos e uma faixa de legenda.
+// PNG da planta com os pilares coloridos e uma faixa de legenda na identidade da Arco-Íris-Mar.
 import { abrirPdf } from './planta.js';
 import {
   STATUS, ORDEM_STATUS, statusDo, checkSemFoto, resumo, fmtData, dataISO, LIMITE_LADO, LIMITE_AREA,
 } from './util.js';
 
-const FONTE = 'Carlito, Calibri, Helvetica, Arial, sans-serif';
+const FONTE = "'Open Sans', Helvetica, Arial, sans-serif";
+const FONTE_TITULO = "Poppins, 'Open Sans', Helvetica, Arial, sans-serif";
+const AZUL = '#0B426D';
+const OURO = '#C3A559';
+
+async function carregarLogo() {
+  const img = new Image();
+  img.src = 'assets/logo-arcoirismar.png';
+  await img.decode();
+  return img;
+}
 
 export async function gerarImagemPlanta(teto, prancha, pilares) {
-  await Promise.all([document.fonts.load(`16px Carlito`), document.fonts.load(`bold 16px Carlito`)]);
+  const [logo] = await Promise.all([
+    carregarLogo(),
+    document.fonts.load(`16px 'Open Sans'`),
+    document.fonts.load(`bold 16px 'Open Sans'`),
+    document.fonts.load(`600 16px Poppins`),
+  ]);
   const pdf = await abrirPdf(prancha.pdf);
   const canvas = document.createElement('canvas');
   try {
@@ -22,7 +37,7 @@ export async function gerarImagemPlanta(teto, prancha, pilares) {
     for (;;) {
       w = Math.floor(vp1.width * escala);
       h = Math.floor(vp1.height * escala);
-      faixa = Math.round(Math.max(150, w * 0.075));
+      faixa = Math.round(Math.max(170, w * 0.085));
       if (w <= LIMITE_LADO && h + faixa <= LIMITE_LADO && w * (h + faixa) <= LIMITE_AREA * 0.98) break;
       escala *= 0.95;
     }
@@ -59,27 +74,35 @@ export async function gerarImagemPlanta(teto, prancha, pilares) {
       ctx.fillText(p.nome, cx + r * 1.45, cy);
     }
 
-    // faixa de legenda
+    // faixa de legenda: fundo neutro quente, filete dourado, logo à direita
     const y0 = h;
-    ctx.fillStyle = '#F2F2F2';
+    ctx.fillStyle = '#F7F6F3';
     ctx.fillRect(0, y0, w, faixa);
-    ctx.fillStyle = '#BDBDBD';
-    ctx.fillRect(0, y0, w, Math.max(2, faixa * 0.012));
+    ctx.fillStyle = OURO;
+    ctx.fillRect(0, y0, w, Math.max(3, faixa * 0.03));
 
-    const m = faixa * 0.22;
+    const m = faixa * 0.16;
     const t1 = faixa * 0.2;
-    const t2 = faixa * 0.14;
+    const t2 = faixa * 0.13;
+    const base1 = y0 + m + t1 * 0.85;
+    const base2 = base1 + t2 * 1.7;
+    const base3 = base2 + t2 * 1.5;
+
+    const logoA = t1 * 1.25;
+    const logoL = (logoA * logo.naturalWidth) / logo.naturalHeight;
+    ctx.drawImage(logo, w - m - logoL, y0 + m * 0.9, logoL, logoA);
+
     ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#222222';
-    ctx.font = `bold ${t1}px ${FONTE}`;
-    ctx.fillText('Residencial Monte Fuji — Controle de Pilares (As-Built)', m, y0 + m + t1 * 0.8);
+    ctx.fillStyle = AZUL;
+    ctx.font = `600 ${t1}px ${FONTE_TITULO}`;
+    ctx.fillText('Residencial Monte Fuji — Controle de Pilares (As-Built)', m, base1);
     ctx.fillStyle = '#4A4A4A';
     ctx.font = `${t2}px ${FONTE}`;
     const linha2 = `${teto.nome} (${teto.codigo})${teto.referenciaPrancha ? ` · Prancha ${teto.referenciaPrancha}` : ''}`;
-    ctx.fillText(linha2, m, y0 + m + t1 + t2 * 1.4);
-    ctx.fillText(`Emitido em ${fmtData(new Date().toISOString())}`, m, y0 + m + t1 + t2 * 2.9);
+    ctx.fillText(linha2, m, base2);
+    ctx.fillText(`Emitido em ${fmtData(new Date().toISOString())}`, m, base3);
 
-    // legenda das cores, alinhada à direita
+    // legenda das cores, alinhada à direita, abaixo da logo
     const res = resumo(pilares);
     const itens = ORDEM_STATUS.map((st) => `${STATUS[st].rotulo} (${res[st]})`);
     itens.push(`${res.pct}% concluído`);
@@ -88,7 +111,7 @@ export async function gerarImagemPlanta(teto, prancha, pilares) {
     const larguras = itens.map((t, i) => ctx.measureText(t).width + (i < 3 ? raio * 2 + t2 * 0.5 : 0));
     const espaco = t2 * 1.4;
     let x = w - m - larguras.reduce((a, b) => a + b, 0) - espaco * (itens.length - 1);
-    const yc = y0 + faixa / 2 + t2 * 0.1;
+    const yc = base3;
     itens.forEach((texto, i) => {
       if (i < 3) {
         ctx.beginPath();
@@ -100,7 +123,7 @@ export async function gerarImagemPlanta(teto, prancha, pilares) {
         ctx.stroke();
         x += raio * 2 + t2 * 0.5;
       }
-      ctx.fillStyle = '#222222';
+      ctx.fillStyle = i < 3 ? '#232323' : AZUL;
       ctx.fillText(texto, x, yc);
       x += larguras[i] - (i < 3 ? raio * 2 + t2 * 0.5 : 0) + espaco;
     });

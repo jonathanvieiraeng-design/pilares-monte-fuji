@@ -14,6 +14,7 @@ import { gerarImagemPlanta } from './imagem.js';
 import { gerarBackup, lerBackup, restaurarBackup } from './backup.js';
 
 const app = document.getElementById('app');
+const LOGO = 'assets/logo-arcoirismar.png';
 let aoSairDaTela = null;
 
 // Arquivo original da última foto de cada pilar, só enquanto o app está aberto.
@@ -105,8 +106,9 @@ async function telaInicio() {
 
   const raiz = el('div', { class: 'tela tela-rolavel' },
     el('header', { class: 'cabecalho-inicio' },
-      el('h1', {}, 'Pilares Monte Fuji'),
-      el('p', { class: 'sub' }, 'Controle da armação · As-built de execução')),
+      el('img', { class: 'logo-marca', src: LOGO, alt: 'Construtora Arco-Íris-Mar' }),
+      el('h1', {}, 'Controle de Pilares'),
+      el('p', { class: 'sub' }, 'Residencial Monte Fuji · As-built da armação')),
     faixaBackup(ultimoBackup),
     lista,
     el('div', { class: 'acoes-inicio' },
@@ -114,7 +116,7 @@ async function telaInicio() {
       el('div', { class: 'linha-botoes' },
         el('button', { type: 'button', class: 'btn', onclick: acaoExportarBackup }, 'Exportar backup'),
         el('button', { type: 'button', class: 'btn', onclick: acaoImportarBackup }, 'Importar backup'))),
-    el('p', { class: 'rodape-versao' }, 'Residencial Monte Fuji · uso offline'));
+    el('p', { class: 'rodape-versao' }, 'Construtora Arco-Íris-Mar · Residencial Monte Fuji · uso offline'));
   montar(raiz);
 }
 
@@ -302,7 +304,8 @@ async function telaFormTeto(id) {
   const raiz = el('div', { class: 'tela' },
     el('header', { class: 'topo' },
       el('a', { class: 'btn-icone', href: voltar, 'aria-label': 'Voltar' }, icone('voltar')),
-      el('div', { class: 'topo-titulo' }, el('strong', {}, teto ? 'Editar teto' : 'Novo teto'))),
+      el('div', { class: 'topo-titulo' }, el('strong', {}, teto ? 'Editar teto' : 'Novo teto')),
+      el('img', { class: 'logo-topo', src: LOGO, alt: 'Construtora Arco-Íris-Mar' })),
     el('div', { class: 'rolavel form' },
       el('label', { class: 'rotulo-campo' }, el('span', {}, 'Nome do teto'), cNome),
       el('label', { class: 'rotulo-campo' }, el('span', {}, 'Código (usado no nome das fotos)'), cCodigo),
@@ -394,6 +397,7 @@ async function telaTeto(id) {
       el('div', { class: 'topo-titulo' },
         el('strong', {}, teto.nome),
         el('small', {}, [teto.codigo, teto.referenciaPrancha].filter(Boolean).join(' · '))),
+      el('img', { class: 'logo-topo', src: LOGO, alt: 'Construtora Arco-Íris-Mar' }),
       el('button', { type: 'button', class: 'btn-icone', 'aria-label': 'Mais opções', onclick: menuTeto }, icone('menu'))),
     el('div', { class: 'barra-teto' },
       el('div', { class: 'segmentado', role: 'group' }, btnConferencia, btnEdicao),

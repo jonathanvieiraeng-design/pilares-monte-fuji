@@ -50,7 +50,7 @@ Durante o desenvolvimento, o service worker serve os arquivos do cache. Para ver
 
 | Arquivo | Função |
 |---|---|
-| `index.html`, `css/app.css` | Página e estilo (tons de cinza, fonte Carlito) |
+| `index.html`, `css/app.css` | Página e estilo (identidade Arco-Íris-Mar) |
 | `js/app.js` | Telas, rotas e fluxo |
 | `js/db.js` | IndexedDB (tetos, pranchas, pilares, meta) |
 | `js/planta.js` | pdf.js, zoom, arraste e marcadores |
@@ -68,4 +68,9 @@ Durante o desenvolvimento, o service worker serve os arquivos do cache. Para ver
 | pdf.js (`pdfjs-dist`, build legacy) | 4.10.38 | `vendor/pdf.min.mjs`, `vendor/pdf.worker.min.mjs` |
 | jsPDF | 2.5.2 | `vendor/jspdf.umd.min.js` |
 | jspdf-autotable | 3.8.4 | `vendor/jspdf.plugin.autotable.min.js` |
-| Carlito (fonte, licença OFL) | Google Fonts | `fonts/Carlito-*.ttf`, `fonts/OFL.txt` |
+| Poppins (títulos, licença OFL) | Google Fonts | `fonts/Poppins-*.ttf`, `fonts/OFL-Poppins.txt` |
+| Open Sans (texto, licença OFL) | googlefonts/opensans | `fonts/OpenSans-*.ttf`, `fonts/OFL-OpenSans.txt` |
+
+## Identidade visual
+
+Construtora Arco-Íris-Mar (a mesma do app de vistoria): logo em `assets/`, azul-marinho `#0B426D`, dourado `#C3A559`, fundo `#F7F6F3`, Poppins nos títulos e Open Sans no texto. As cores de status (cinza, amarelo, verde) têm significado próprio e não seguem a marca.

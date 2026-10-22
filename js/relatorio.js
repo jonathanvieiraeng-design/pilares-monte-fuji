@@ -1,54 +1,95 @@
-// Relatório por teto em PDF (jsPDF + autotable), fonte Carlito embutida.
+// Relatório por teto em PDF (jsPDF + autotable), na identidade da Construtora Arco-Íris-Mar:
+// logo, azul-marinho e dourado; Poppins nos títulos e Open Sans no texto (embutidas).
 import {
   STATUS, statusDo, resumo, fmtData, fmtDataHora, dataISO, compararNatural, bufParaBase64, hexParaRgb,
 } from './util.js';
 
-let fontes;
+const ARQUIVOS_FONTE = {
+  regular: 'fonts/OpenSans-Regular.ttf',
+  negrito: 'fonts/OpenSans-Bold.ttf',
+  titulo: 'fonts/Poppins-SemiBold.ttf',
+};
+const LOGO = 'assets/logo-arcoirismar.png';
+const LOGO_PROPORCAO = 1250 / 190; // largura / altura do arquivo da logo
 
-async function carregarFontes() {
-  if (!fontes) {
-    const [regular, negrito] = await Promise.all(
-      ['fonts/Carlito-Regular.ttf', 'fonts/Carlito-Bold.ttf'].map((u) => fetch(u).then((r) => {
-        if (!r.ok) throw new Error(`fonte não encontrada (${u})`);
-        return r.arrayBuffer();
-      })),
-    );
-    fontes = { regular: bufParaBase64(regular), negrito: bufParaBase64(negrito) };
-  }
-  return fontes;
+let recursos;
+
+async function baixar(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`arquivo não encontrado (${url})`);
+  return r.arrayBuffer();
 }
 
-const CINZA_ESCURO = [64, 64, 64];
-const CINZA_TEXTO = [40, 40, 40];
-const CINZA_MEDIO = [110, 110, 110];
-const CINZA_LINHA = [200, 200, 200];
-const CINZA_CLARO = [244, 244, 244];
+// A logo é PNG com transparência, que o jsPDF guarda sem compressão (~1 MB).
+// Reduz e converte para JPEG sobre fundo branco (~20 KB).
+async function logoJpeg() {
+  const img = new Image();
+  img.src = LOGO;
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = 700;
+  c.height = Math.round((700 * img.naturalHeight) / img.naturalWidth);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  const dados = c.toDataURL('image/jpeg', 0.92);
+  c.width = 0;
+  c.height = 0;
+  return dados;
+}
+
+async function carregarRecursos() {
+  if (!recursos) {
+    const [regular, negrito, titulo, logo] = await Promise.all([
+      baixar(ARQUIVOS_FONTE.regular), baixar(ARQUIVOS_FONTE.negrito), baixar(ARQUIVOS_FONTE.titulo), logoJpeg(),
+    ]);
+    recursos = {
+      regular: bufParaBase64(regular),
+      negrito: bufParaBase64(negrito),
+      titulo: bufParaBase64(titulo),
+      logo,
+    };
+  }
+  return recursos;
+}
+
+const AZUL = [11, 66, 109];
+const OURO = [195, 165, 89];
+const CINZA_TEXTO = [35, 35, 35];
+const CINZA_MEDIO = [100, 100, 100];
+const CINZA_LINHA = [221, 216, 204];
+const CINZA_CLARO = [247, 246, 243];
 
 export async function gerarRelatorio(teto, prancha, pilares) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-  const f = await carregarFontes();
-  doc.addFileToVFS('Carlito-Regular.ttf', f.regular);
-  doc.addFont('Carlito-Regular.ttf', 'Carlito', 'normal');
-  doc.addFileToVFS('Carlito-Bold.ttf', f.negrito);
-  doc.addFont('Carlito-Bold.ttf', 'Carlito', 'bold');
+  const f = await carregarRecursos();
+  doc.addFileToVFS('OpenSans-Regular.ttf', f.regular);
+  doc.addFont('OpenSans-Regular.ttf', 'OpenSans', 'normal');
+  doc.addFileToVFS('OpenSans-Bold.ttf', f.negrito);
+  doc.addFont('OpenSans-Bold.ttf', 'OpenSans', 'bold');
+  doc.addFileToVFS('Poppins-SemiBold.ttf', f.titulo);
+  doc.addFont('Poppins-SemiBold.ttf', 'Poppins', 'normal');
 
   const L = 210;
   const M = 15;
   const emissao = new Date().toISOString();
 
-  // cabeçalho
-  doc.setFont('Carlito', 'bold');
-  doc.setFontSize(16);
-  doc.setTextColor(...CINZA_TEXTO);
-  doc.text('Residencial Monte Fuji', M, 20);
-  doc.setFont('Carlito', 'normal');
-  doc.setFontSize(11);
+  // cabeçalho: logo à direita, título à esquerda, filete dourado
+  const logoL = 52;
+  doc.addImage(f.logo, 'JPEG', L - M - logoL, 12, logoL, logoL / LOGO_PROPORCAO);
+  doc.setFont('Poppins', 'normal');
+  doc.setFontSize(15);
+  doc.setTextColor(...AZUL);
+  doc.text('Residencial Monte Fuji', M, 18);
+  doc.setFont('OpenSans', 'normal');
+  doc.setFontSize(10);
   doc.setTextColor(...CINZA_MEDIO);
-  doc.text('Controle de Pilares — As-Built da Armação', M, 26);
-  doc.setDrawColor(...CINZA_LINHA);
-  doc.setLineWidth(0.3);
-  doc.line(M, 30, L - M, 30);
+  doc.text('Controle de Pilares — As-Built da Armação', M, 24);
+  doc.setDrawColor(...OURO);
+  doc.setLineWidth(0.8);
+  doc.line(M, 29, L - M, 29);
 
   const info = [
     ['Teto', `${teto.nome} (${teto.codigo})`],
@@ -59,10 +100,11 @@ export async function gerarRelatorio(teto, prancha, pilares) {
   let y = 37;
   doc.setFontSize(10);
   for (const [rotulo, valor] of info) {
-    doc.setFont('Carlito', 'bold');
-    doc.setTextColor(...CINZA_TEXTO);
+    doc.setFont('OpenSans', 'bold');
+    doc.setTextColor(...AZUL);
     doc.text(rotulo, M, y);
-    doc.setFont('Carlito', 'normal');
+    doc.setFont('OpenSans', 'normal');
+    doc.setTextColor(...CINZA_TEXTO);
     doc.text(doc.splitTextToSize(valor, L - 2 * M - 22)[0], M + 22, y);
     y += 5.5;
   }
@@ -89,13 +131,13 @@ export async function gerarRelatorio(teto, prancha, pilares) {
       doc.setFillColor(...hexParaRgb(c.cor));
       doc.rect(x, y, 1.6, alt, 'F');
     }
-    doc.setFont('Carlito', 'normal');
+    doc.setFont('OpenSans', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...CINZA_MEDIO);
     doc.text(c.rotulo, x + 4, y + 5);
-    doc.setFont('Carlito', 'bold');
+    doc.setFont('Poppins', 'normal');
     doc.setFontSize(15);
-    doc.setTextColor(...CINZA_TEXTO);
+    doc.setTextColor(...AZUL);
     doc.text(String(c.valor), x + 4, y + 12.5);
   });
   y += alt + 7;
@@ -124,10 +166,10 @@ export async function gerarRelatorio(teto, prancha, pilares) {
     head: [['Pilar', 'Status', 'Data da conferência', 'Nome da foto', 'Upload no OneDrive']],
     body: linhas.map((l) => l.celulas),
     styles: {
-      font: 'Carlito', fontSize: 9, textColor: CINZA_TEXTO, cellPadding: 1.8,
+      font: 'OpenSans', fontSize: 9, textColor: CINZA_TEXTO, cellPadding: 1.8,
       lineColor: CINZA_LINHA, lineWidth: 0.1, overflow: 'linebreak',
     },
-    headStyles: { font: 'Carlito', fontStyle: 'bold', fillColor: CINZA_ESCURO, textColor: 255 },
+    headStyles: { font: 'OpenSans', fontStyle: 'bold', fillColor: AZUL, textColor: 255 },
     alternateRowStyles: { fillColor: CINZA_CLARO },
     columnStyles: {
       0: { fontStyle: 'bold', cellWidth: 20 },
@@ -146,7 +188,7 @@ export async function gerarRelatorio(teto, prancha, pilares) {
   // legenda dos status
   let yl = (doc.lastAutoTable?.finalY || y) + 7;
   if (!linhas.length) {
-    doc.setFont('Carlito', 'normal');
+    doc.setFont('OpenSans', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(...CINZA_MEDIO);
     doc.text('Nenhum pilar cadastrado neste teto.', M, yl);
@@ -165,10 +207,10 @@ export async function gerarRelatorio(teto, prancha, pilares) {
   for (const [st, texto] of legenda) {
     doc.setFillColor(...hexParaRgb(STATUS[st].cor));
     doc.rect(M, yl - 2.4, 2.8, 2.8, 'F');
-    doc.setFont('Carlito', 'bold');
+    doc.setFont('OpenSans', 'bold');
     doc.setTextColor(...CINZA_TEXTO);
     doc.text(STATUS[st].rotulo, M + 4.5, yl);
-    doc.setFont('Carlito', 'normal');
+    doc.setFont('OpenSans', 'normal');
     doc.setTextColor(...CINZA_MEDIO);
     doc.text(`— ${texto}`, M + 22, yl);
     yl += 4.8;
@@ -178,12 +220,13 @@ export async function gerarRelatorio(teto, prancha, pilares) {
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i++) {
     doc.setPage(i);
-    doc.setDrawColor(...CINZA_LINHA);
+    doc.setDrawColor(...OURO);
+    doc.setLineWidth(0.5);
     doc.line(M, 283, L - M, 283);
-    doc.setFont('Carlito', 'normal');
-    doc.setFontSize(8);
+    doc.setFont('OpenSans', 'normal');
+    doc.setFontSize(7.5);
     doc.setTextColor(...CINZA_MEDIO);
-    doc.text(`Residencial Monte Fuji · ${teto.codigo} · emitido em ${fmtDataHora(emissao)}`, M, 288);
+    doc.text(`Construtora Arco-Íris-Mar · Residencial Monte Fuji · ${teto.codigo} · emitido em ${fmtDataHora(emissao)}`, M, 288);
     doc.text(`Página ${i} de ${total}`, L - M, 288, { align: 'right' });
   }
 

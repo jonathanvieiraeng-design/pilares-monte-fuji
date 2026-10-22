@@ -1,6 +1,6 @@
 // Service worker: guarda o app inteiro para funcionar offline.
 // A cada versão publicada, AUMENTE o número abaixo (pilares-v2, v3…).
-const VERSAO = 'pilares-v1';
+const VERSAO = 'pilares-v2';
 
 const ARQUIVOS = [
   './',
@@ -20,8 +20,13 @@ const ARQUIVOS = [
   'vendor/pdf.worker.min.mjs',
   'vendor/jspdf.umd.min.js',
   'vendor/jspdf.plugin.autotable.min.js',
-  'fonts/Carlito-Regular.ttf',
-  'fonts/Carlito-Bold.ttf',
+  'fonts/OpenSans-Regular.ttf',
+  'fonts/OpenSans-SemiBold.ttf',
+  'fonts/OpenSans-Bold.ttf',
+  'fonts/Poppins-SemiBold.ttf',
+  'fonts/Poppins-Bold.ttf',
+  'assets/logo-arcoirismar.png',
+  'assets/favicon.png',
   'icons/icon-180.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
