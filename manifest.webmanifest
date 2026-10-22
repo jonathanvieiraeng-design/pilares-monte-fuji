@@ -1,0 +1,16 @@
+{
+  "name": "Pilares Monte Fuji",
+  "short_name": "Pilares MF",
+  "description": "Controle da armação dos pilares (as-built) do Residencial Monte Fuji.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ECECEC",
+  "theme_color": "#3A3A3A",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

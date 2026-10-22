@@ -1,0 +1,6 @@
+# Pranchas e backups da obra NUNCA vão para o repositório (GitHub Pages é público)
+*.pdf
+*.json
+!manifest.webmanifest
+.DS_Store
+Thumbs.db
