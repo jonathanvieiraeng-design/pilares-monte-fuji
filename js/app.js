@@ -2,13 +2,15 @@
 import * as db from './db.js';
 import {
   el, uid, agora, STATUS, ORDEM_STATUS, statusDo, checkSemFoto, resumo, fmtData, fmtDataHora, diasDesde,
-  tamanhoLegivel, normalizarNomePilar, limparNome, compararNatural, compartilharArquivo,
+  tamanhoLegivel, normalizarNomePilar, limparNome, compararNatural, compartilharArquivo, dataISO,
 } from './util.js';
 import {
   icone, abrirModal, alerta, confirmar, pedirTexto, escolher, oferecerArquivo, toast, carregando,
 } from './ui.js';
 import { Planta, abrirPdf, renderizarMiniatura } from './planta.js';
-import { escolherFoto, nomeDaFoto, prepararFoto, gerarMiniatura } from './foto.js';
+import {
+  escolherFoto, nomeDaFoto, prepararFoto, arquivoComNome, gerarMiniatura, dataProvavelDaFoto,
+} from './foto.js';
 import { gerarRelatorio } from './relatorio.js';
 import { gerarImagemPlanta } from './imagem.js';
 import { gerarBackup, lerBackup, restaurarBackup } from './backup.js';
@@ -588,8 +590,11 @@ async function telaTeto(id) {
 
     let blocoFoto;
     if (!ultima) {
-      blocoFoto = el('button', { type: 'button', class: 'btn btn-primario btn-grande', onclick: () => fluxoFoto(p) },
-        icone('camera'), 'Tirar foto');
+      blocoFoto = el('div', { class: 'bloco-foto' },
+        el('button', { type: 'button', class: 'btn btn-primario btn-grande', onclick: () => fluxoFoto(p) },
+          icone('camera'), 'Tirar foto'),
+        el('button', { type: 'button', class: 'btn', onclick: () => fluxoFoto(p, { carregar: true }) },
+          icone('galeria'), 'Carregar foto existente'));
     } else {
       const url = ultima.miniatura ? URL.createObjectURL(new Blob([ultima.miniatura], { type: 'image/jpeg' })) : null;
       if (url) urlsFicha.push(url);
@@ -599,14 +604,16 @@ async function telaTeto(id) {
           url ? el('img', { class: 'miniatura', src: url, alt: `Miniatura da foto de ${p.nome}` }) : el('div', { class: 'miniatura' }),
           el('div', { class: 'foto-info' },
             el('div', { class: 'nome-arquivo' }, ultima.nomeArquivo),
-            el('small', {}, fmtDataHora(ultima.tiradaEm)),
+            el('small', {}, fmtDataHora(ultima.tiradaEm) + (ultima.carregada ? ' · carregada' : '')),
             p.fotos.length > 1
               ? el('details', { class: 'historico' },
                 el('summary', {}, `${p.fotos.length} fotos no histórico`),
-                el('ul', {}, p.fotos.map((f) => el('li', {}, `${f.nomeArquivo} · ${fmtDataHora(f.tiradaEm)}`))))
+                el('ul', {}, p.fotos.map((f) => el('li', {},
+                  `${f.nomeArquivo} · ${fmtDataHora(f.tiradaEm)}${f.carregada ? ' · carregada' : ''}`))))
               : null)),
         el('div', { class: 'foto-acoes' },
           el('button', { type: 'button', class: 'btn', onclick: () => fluxoFoto(p) }, icone('camera'), 'Nova foto'),
+          el('button', { type: 'button', class: 'btn', onclick: () => fluxoFoto(p, { carregar: true }) }, icone('galeria'), 'Carregar'),
           naSessao ? el('button', { type: 'button', class: 'btn', onclick: () => compartilharNovamente(p) }, 'Compartilhar de novo') : null,
           el('button', { type: 'button', class: 'btn btn-texto-perigo', onclick: () => excluirUltimaFoto(p) }, 'Excluir foto')),
         naSessao ? null : el('p', { class: 'nota' },
@@ -642,7 +649,8 @@ async function telaTeto(id) {
     if (!p.armaduraVerificada) {
       p.armaduraVerificada = true;
       p.armaduraEm = agora();
-      if (p.fotos.length && !p.dataConferencia) p.dataConferencia = agora();
+      // a conferência vale pela data da foto (relevante para fotos antigas carregadas)
+      if (p.fotos.length && !p.dataConferencia) p.dataConferencia = p.fotos[p.fotos.length - 1].tiradaEm;
     } else {
       const ok = await confirmar(
         `Desmarcar a armadura do ${p.nome}? Isso apaga a data da conferência e desmarca o upload.`,
@@ -684,16 +692,19 @@ async function telaTeto(id) {
   }
 
   // ---------- fluxo da foto ----------
-  async function fluxoFoto(p) {
-    const original = await escolherFoto();
+  // carregar: false = câmera (data de agora); true = foto já existente (galeria/Arquivos),
+  // com a data lida da própria foto e editável, porque ela vira a data do arquivo e da conferência.
+  async function fluxoFoto(p, { carregar = false } = {}) {
+    const original = await escolherFoto({ camera: !carregar });
     if (!original) return;
-    const fim = carregando('Preparando foto…');
-    let foto;
+    const fim = carregando(carregar ? 'Lendo foto…' : 'Preparando foto…');
+    let dados;
     let mini;
-    const nome = nomeDaFoto(teto, p);
+    let provavel = null;
     try {
-      foto = await prepararFoto(original, nome);
-      mini = await gerarMiniatura(foto);
+      if (carregar) provavel = await dataProvavelDaFoto(original);
+      dados = await prepararFoto(original);
+      mini = await gerarMiniatura(dados);
     } catch (e) {
       alerta(`Não foi possível ler a foto: ${e.message}`, 'Erro');
       return;
@@ -701,32 +712,71 @@ async function telaTeto(id) {
       fim();
     }
 
-    const url = URL.createObjectURL(foto);
+    let data = provavel ? provavel.data : new Date();
+    const nomeEl = el('div', { class: 'nome-arquivo' });
+    const atualizarNome = () => { nomeEl.textContent = nomeDaFoto(teto, p, dataISO(data)); };
+    atualizarNome();
+
+    let blocoData = null;
+    if (carregar) {
+      const campo = el('input', { class: 'campo', type: 'date', value: dataISO(data), max: dataISO() });
+      campo.addEventListener('change', () => {
+        if (!campo.value) return;
+        const [a, m, d] = campo.value.split('-').map(Number);
+        // mantém a hora original quando a data não muda
+        data = campo.value === dataISO(provavel.data) ? provavel.data : new Date(a, m - 1, d, 12, 0, 0);
+        atualizarNome();
+      });
+      blocoData = el('label', { class: 'rotulo-campo' },
+        el('span', {}, `Data da foto (${provavel.origem})`), campo);
+    }
+
+    const url = URL.createObjectURL(dados);
     const r = await abrirModal({
-      titulo: `Foto do pilar ${p.nome}`,
+      titulo: carregar ? `Carregar foto · ${p.nome}` : `Foto do pilar ${p.nome}`,
       classe: 'modal-foto',
       corpo: el('div', {},
         el('img', { class: 'previa-foto', src: url, alt: 'Prévia da foto' }),
-        el('div', { class: 'nome-arquivo' }, nome),
+        blocoData,
+        nomeEl,
         el('p', { class: 'orientacao' },
           'Use "Salvar em Arquivos" (pasta do OneDrive) ou o app do OneDrive. ',
-          el('strong', {}, '"Salvar Imagem" perde o nome do arquivo.'))),
+          el('strong', {}, '"Salvar Imagem" perde o nome do arquivo.'),
+          carregar ? ' Se a foto já está no OneDrive, use "Só registrar".' : null)),
       botoes: [
         { rotulo: 'Descartar', valor: null },
+        carregar
+          ? { rotulo: 'Só registrar', acao: (fechar) => fechar({ foto: arquivoComNome(dados, nomeEl.textContent), envio: null }) }
+          : null,
         // o share precisa sair dentro deste toque, antes de qualquer await
-        { rotulo: 'Compartilhar', classe: 'btn-primario', acao: (fechar) => fechar({ envio: compartilharArquivo(foto) }) },
-      ],
+        {
+          rotulo: 'Compartilhar',
+          classe: 'btn-primario',
+          acao: (fechar) => {
+            const foto = arquivoComNome(dados, nomeEl.textContent);
+            fechar({ foto, envio: compartilharArquivo(foto) });
+          },
+        },
+      ].filter(Boolean),
     });
     URL.revokeObjectURL(url);
     if (!r) return;
 
     // registra mesmo que o compartilhamento seja cancelado
     const momento = agora();
-    p.fotos.push({ nomeArquivo: nome, tiradaEm: momento, miniatura: mini });
-    if (p.armaduraVerificada && !p.dataConferencia) p.dataConferencia = momento;
-    fotosDaSessao.set(p.id, foto);
+    const registro = { nomeArquivo: r.foto.name, tiradaEm: carregar ? data.toISOString() : momento, miniatura: mini };
+    if (carregar) Object.assign(registro, { carregada: true, registradaEm: momento });
+    p.fotos.push(registro);
+    // a última foto da lista é sempre a mais recente
+    p.fotos.sort((a, b) => a.tiradaEm.localeCompare(b.tiradaEm));
+    if (p.armaduraVerificada && !p.dataConferencia) p.dataConferencia = registro.tiradaEm;
+    if (p.fotos[p.fotos.length - 1] === registro) fotosDaSessao.set(p.id, r.foto);
     await salvar(p);
 
+    if (!r.envio) {
+      toast('Foto registrada');
+      return;
+    }
     try {
       const res = await r.envio;
       if (res === 'cancelado') toast('Foto registrada. Para enviar, use "Compartilhar de novo".');
