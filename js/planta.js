@@ -288,6 +288,7 @@ export class Planta {
   _classes(p) {
     let c = `marcador st-${statusDo(p)}`;
     if (checkSemFoto(p)) c += ' sem-foto';
+    if (p.spda) c += ' spda';
     if (p.id === this.destaqueId) c += ' destaque';
     return c;
   }
@@ -295,6 +296,7 @@ export class Planta {
   _criarElemento(p) {
     const e = el('div', { class: this._classes(p), dataset: { id: p.id } },
       el('span', { class: 'ponto' }),
+      el('span', { class: 'raio', 'aria-hidden': 'true' }),
       el('span', { class: 'rotulo' }, p.nome));
     this.elementos.set(p.id, e);
     return e;

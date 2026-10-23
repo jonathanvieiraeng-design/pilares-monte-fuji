@@ -1,8 +1,33 @@
 // PNG da planta com os pilares coloridos e uma faixa de legenda na identidade da Arco-Íris-Mar.
 import { abrirPdf } from './planta.js';
 import {
-  STATUS, ORDEM_STATUS, statusDo, checkSemFoto, resumo, fmtData, dataISO, LIMITE_LADO, LIMITE_AREA,
+  STATUS, ORDEM_STATUS, checkSemFoto, resumo, fmtData, dataISO, LIMITE_LADO, LIMITE_AREA,
+  corDoPilar, COR_SPDA_CONCLUIDO,
 } from './util.js';
+
+// Selo de raio do pilar com SPDA: círculo azul-marinho com raio amarelo, centrado em (cx, cy).
+function desenharSeloRaio(ctx, cx, cy, raio) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, raio, 0, Math.PI * 2);
+  ctx.fillStyle = '#0B426D';
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, raio * 0.18);
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.stroke();
+  // mesmo desenho do ícone da tela (viewBox 24): M13.5 2 L5 13.5 h5.5 L9.5 22 L19 9.5 h-5.8 z
+  const k = (raio * 1.5) / 24;
+  const pts = [[13.5, 2], [5, 13.5], [10.5, 13.5], [9.5, 22], [19, 9.5], [13.2, 9.5]];
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => {
+    const px = cx + (x - 12) * k;
+    const py = cy + (y - 12) * k;
+    if (i) ctx.lineTo(px, py);
+    else ctx.moveTo(px, py);
+  });
+  ctx.closePath();
+  ctx.fillStyle = '#F2C200';
+  ctx.fill();
+}
 
 const FONTE = "'Open Sans', Helvetica, Arial, sans-serif";
 const FONTE_TITULO = "Poppins, 'Open Sans', Helvetica, Arial, sans-serif";
@@ -56,7 +81,7 @@ export async function gerarImagemPlanta(teto, prancha, pilares) {
       const cy = p.y * h;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = STATUS[statusDo(p)].cor;
+      ctx.fillStyle = corDoPilar(p);
       ctx.fill();
       ctx.lineWidth = r * 0.28;
       ctx.strokeStyle = '#2B2B2B';
@@ -65,13 +90,19 @@ export async function gerarImagemPlanta(teto, prancha, pilares) {
       ctx.stroke();
       ctx.setLineDash([]);
 
+      // nome à direita; no pilar SPDA, o selo de raio vem antes do nome
+      let xNome = cx + r * 1.45;
+      if (p.spda) {
+        desenharSeloRaio(ctx, cx + r * 0.75, cy - r * 1.35, r * 0.72);
+        xNome += r * 0.3;
+      }
       ctx.font = `bold ${Math.round(r * 1.7)}px ${FONTE}`;
       ctx.lineJoin = 'round';
       ctx.lineWidth = r * 0.5;
       ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-      ctx.strokeText(p.nome, cx + r * 1.45, cy);
+      ctx.strokeText(p.nome, xNome, cy);
       ctx.fillStyle = '#1F1F1F';
-      ctx.fillText(p.nome, cx + r * 1.45, cy);
+      ctx.fillText(p.nome, xNome, cy);
     }
 
     // faixa de legenda: fundo neutro quente, filete dourado, logo à direita
@@ -104,28 +135,39 @@ export async function gerarImagemPlanta(teto, prancha, pilares) {
 
     // legenda das cores, alinhada à direita, abaixo da logo
     const res = resumo(pilares);
-    const itens = ORDEM_STATUS.map((st) => `${STATUS[st].rotulo} (${res[st]})`);
-    itens.push(`${res.pct}% concluído`);
+    const itens = ORDEM_STATUS.map((st) => ({
+      cor: STATUS[st].cor,
+      // com SPDA, o verde conta só os pilares comuns; os SPDA concluídos vão no azul
+      texto: `${STATUS[st].rotulo} (${st === 'concluido' ? res.concluido - res.spdaConcluido : res[st]})`,
+    }));
+    if (res.spda) {
+      itens.push({ cor: COR_SPDA_CONCLUIDO, texto: `Concluído SPDA (${res.spdaConcluido})` });
+      itens.push({ selo: true, texto: `SPDA (${res.spda})` });
+    }
+    itens.push({ texto: `${res.pct}% concluído`, destaque: true });
     ctx.font = `bold ${t2}px ${FONTE}`;
     const raio = t2 * 0.42;
-    const larguras = itens.map((t, i) => ctx.measureText(t).width + (i < 3 ? raio * 2 + t2 * 0.5 : 0));
+    const marca = raio * 2 + t2 * 0.5; // largura do símbolo + folga antes do texto
+    const larguras = itens.map((it) => ctx.measureText(it.texto).width + (it.cor || it.selo ? marca : 0));
     const espaco = t2 * 1.4;
     let x = w - m - larguras.reduce((a, b) => a + b, 0) - espaco * (itens.length - 1);
     const yc = base3;
-    itens.forEach((texto, i) => {
-      if (i < 3) {
+    itens.forEach((it, i) => {
+      if (it.cor) {
         ctx.beginPath();
         ctx.arc(x + raio, yc - t2 * 0.32, raio, 0, Math.PI * 2);
-        ctx.fillStyle = STATUS[ORDEM_STATUS[i]].cor;
+        ctx.fillStyle = it.cor;
         ctx.fill();
         ctx.lineWidth = Math.max(1, raio * 0.25);
         ctx.strokeStyle = '#2B2B2B';
         ctx.stroke();
-        x += raio * 2 + t2 * 0.5;
+      } else if (it.selo) {
+        desenharSeloRaio(ctx, x + raio, yc - t2 * 0.32, raio * 1.1);
       }
-      ctx.fillStyle = i < 3 ? '#232323' : AZUL;
-      ctx.fillText(texto, x, yc);
-      x += larguras[i] - (i < 3 ? raio * 2 + t2 * 0.5 : 0) + espaco;
+      ctx.font = `bold ${t2}px ${FONTE}`;
+      ctx.fillStyle = it.destaque ? AZUL : '#232323';
+      ctx.fillText(it.texto, x + (it.cor || it.selo ? marca : 0), yc);
+      x += larguras[i] + espaco;
     });
 
     const blob = await new Promise((resolve, rejeitar) => {

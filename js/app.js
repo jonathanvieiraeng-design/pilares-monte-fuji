@@ -3,6 +3,7 @@ import * as db from './db.js';
 import {
   el, uid, agora, STATUS, ORDEM_STATUS, statusDo, checkSemFoto, resumo, fmtData, fmtDataHora, diasDesde,
   tamanhoLegivel, normalizarNomePilar, limparNome, compararNatural, compartilharArquivo, dataISO,
+  checksCompletos, conferenciaCompleta, rotuloStatus, chaveNomePilar,
 } from './util.js';
 import {
   icone, abrirModal, alerta, confirmar, pedirTexto, escolher, oferecerArquivo, toast, carregando,
@@ -360,7 +361,7 @@ async function telaTeto(id) {
   const resumoEl = el('div', { class: 'resumo-chips' });
   const area = el('div', { class: 'area-planta' });
   const dica = el('div', { class: 'dica-edicao', hidden: true },
-    'Toque na planta para criar um pilar · toque no marcador para renomear ou excluir · toque e segure para mover');
+    'Toque na planta para criar um pilar · toque no marcador para marcar SPDA, renomear ou excluir · toque e segure para mover');
   const btnNomes = el('button', { type: 'button', class: 'btn-flutuante', 'aria-label': 'Mostrar nomes', onclick: () => {
     btnNomes.classList.toggle('ativo', planta.alternarNomes());
   } }, icone('nomes'));
@@ -459,7 +460,27 @@ async function telaTeto(id) {
       chips.splice(1, 0, el('span', { class: 'chip chip-sem-foto', title: 'Check feito, falta a foto' },
         el('span', { class: 'ponto-st st-pendente sem-foto' }), icone('camera'), String(semFoto)));
     }
+    if (r.spda) {
+      chips.push(el('span', { class: 'chip chip-spda', title: 'Pilares com SPDA concluídos / total' },
+        el('span', { class: 'selo-raio' }), `${r.spdaConcluido}/${r.spda}`));
+    }
     resumoEl.replaceChildren(...chips, el('span', { class: 'chip chip-pct' }, `${r.pct}%`));
+  }
+
+  // Mantém a data da conferência coerente: é a data da foto mais recente quando
+  // checks + foto estão completos, e some quando a conferência deixa de estar completa.
+  function sincronizarConferencia(p) {
+    if (!conferenciaCompleta(p)) {
+      p.dataConferencia = null;
+      return;
+    }
+    if (!p.dataConferencia) p.dataConferencia = p.fotos[p.fotos.length - 1].tiradaEm;
+  }
+
+  function definirSpda(p, valor) {
+    p.spda = valor;
+    if (!valor) Object.assign(p, { rebarVerificado: false, rebarEm: null });
+    sincronizarConferencia(p);
   }
 
   function definirModo(m) {
@@ -477,22 +498,61 @@ async function telaTeto(id) {
     const nome = normalizarNomePilar(texto);
     if (!nome) return 'Digite o nome do pilar.';
     if (!limparNome(nome)) return 'Use letras ou números no nome.';
-    const chave = limparNome(nome);
-    const outro = pilares.find((p) => p.id !== ignorarId && limparNome(p.nome) === chave);
+    // "P01" e "P1" contam como o mesmo pilar
+    const chave = chaveNomePilar(nome);
+    const outro = pilares.find((p) => p.id !== ignorarId && chaveNomePilar(p.nome) === chave);
     if (outro) return `Já existe o pilar ${outro.nome} neste teto.`;
     return null;
   }
 
-  async function criarPilar(fx, fy) {
-    const texto = await pedirTexto({
-      titulo: 'Novo pilar', rotulo: 'Nome do pilar', placeholder: 'Ex.: P14', maiusculas: true,
-      validar: (t) => validarNome(t),
+  // Nome + opção SPDA. Resolve { nome, spda } ou null.
+  function pedirNomePilar({ titulo, rotuloOk, valor = '', spda = false, ignorarId = null }) {
+    const input = el('input', {
+      class: 'campo', type: 'text', value: valor, placeholder: 'Ex.: P14',
+      autocapitalize: 'characters', autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'done',
     });
-    if (texto == null) return;
+    const caixaSpda = el('input', { type: 'checkbox', class: 'caixa-spda', checked: spda });
+    const erro = el('p', { class: 'erro', hidden: true });
+    const enviar = (fechar) => {
+      const msg = validarNome(input.value, ignorarId);
+      if (msg) {
+        erro.textContent = msg;
+        erro.hidden = false;
+        return;
+      }
+      fechar({ nome: normalizarNomePilar(input.value), spda: caixaSpda.checked });
+    };
+    return abrirModal({
+      titulo,
+      corpo: el('div', { class: 'modal-corpo' },
+        el('label', { class: 'rotulo-campo' }, el('span', {}, 'Nome do pilar'), input, erro),
+        el('label', { class: 'opcao-spda' }, caixaSpda, el('span', { class: 'selo-raio' }),
+          el('span', {}, el('strong', {}, 'Pilar com SPDA'), el('small', {}, 'Rebar conforme projeto de SPDA')))),
+      botoes: [
+        { rotulo: 'Cancelar', valor: null },
+        { rotulo: rotuloOk, classe: 'btn-primario', acao: enviar },
+      ],
+      aoAbrir: (caixa, fechar) => {
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            enviar(fechar);
+          }
+        });
+        input.addEventListener('input', () => { erro.hidden = true; });
+        input.focus();
+        input.select();
+      },
+    });
+  }
+
+  async function criarPilar(fx, fy) {
+    const r = await pedirNomePilar({ titulo: 'Novo pilar', rotuloOk: 'Salvar' });
+    if (!r) return;
     const p = {
-      id: uid(), tetoId: teto.id, nome: normalizarNomePilar(texto), x: fx, y: fy,
-      armaduraVerificada: false, armaduraEm: null, fotos: [], dataConferencia: null,
-      uploadOneDrive: false, uploadEm: null, criadoEm: agora(),
+      id: uid(), tetoId: teto.id, nome: r.nome, x: fx, y: fy, spda: r.spda,
+      armaduraVerificada: false, armaduraEm: null, rebarVerificado: false, rebarEm: null,
+      fotos: [], dataConferencia: null, uploadOneDrive: false, uploadEm: null, criadoEm: agora(),
     };
     pilares.push(p);
     await salvar(p);
@@ -514,18 +574,26 @@ async function telaTeto(id) {
       titulo: p.nome,
       texto: 'Para mover, toque e segure o marcador e arraste.',
       opcoes: [
+        { rotulo: p.spda ? 'Remover SPDA' : 'Marcar como SPDA', valor: 'spda' },
         { rotulo: 'Renomear', valor: 'renomear' },
         { rotulo: 'Excluir', valor: 'excluir', classe: 'btn-texto-perigo' },
         { rotulo: 'Cancelar', valor: null },
       ],
     });
-    if (op === 'renomear') {
-      const texto = await pedirTexto({
-        titulo: 'Renomear pilar', rotulo: 'Nome do pilar', valor: p.nome, maiusculas: true,
-        validar: (t) => validarNome(t, p.id),
-      });
-      if (texto == null) return;
-      p.nome = normalizarNomePilar(texto);
+    if (op === 'spda') {
+      if (p.spda && p.rebarVerificado) {
+        const ok = await confirmar(`O ${p.nome} já tem o check do rebar SPDA. Remover o SPDA apaga esse check.`,
+          { titulo: 'Remover SPDA', rotuloOk: 'Remover', perigo: true });
+        if (!ok) return;
+      }
+      definirSpda(p, !p.spda);
+      await salvar(p);
+      toast(p.spda ? `${p.nome} marcado como SPDA` : `SPDA removido do ${p.nome}`);
+    } else if (op === 'renomear') {
+      const r = await pedirNomePilar({ titulo: 'Editar pilar', rotuloOk: 'Salvar', valor: p.nome, spda: !!p.spda, ignorarId: p.id });
+      if (!r) return;
+      p.nome = r.nome;
+      if (r.spda !== !!p.spda) definirSpda(p, r.spda);
       await salvar(p);
     } else if (op === 'excluir') {
       const temRegistro = p.armaduraVerificada || p.fotos.length;
@@ -580,13 +648,16 @@ async function telaTeto(id) {
     urlsFicha = [];
     const st = statusDo(p);
     const ultima = p.fotos[p.fotos.length - 1];
-    const podeUpload = p.armaduraVerificada && p.fotos.length > 0;
+    const podeUpload = conferenciaCompleta(p);
 
+    const faltas = [];
+    if (!p.armaduraVerificada) faltas.push('armadura');
+    if (p.spda && !p.rebarVerificado) faltas.push('rebar SPDA');
+    if (!p.fotos.length) faltas.push('foto');
     let situacao;
     if (p.dataConferencia) situacao = `Conferido em ${fmtDataHora(p.dataConferencia)}`;
-    else if (checkSemFoto(p)) situacao = 'Armadura verificada — falta a foto';
-    else if (p.fotos.length) situacao = 'Foto tirada — falta o check da armadura';
-    else situacao = 'Ainda não conferido';
+    else if (faltas.length === (p.spda ? 3 : 2)) situacao = 'Ainda não conferido';
+    else situacao = `Falta: ${faltas.join(', ')}`;
 
     let blocoFoto;
     if (!ultima) {
@@ -620,29 +691,52 @@ async function telaTeto(id) {
           'O app guarda só a miniatura. A foto original está no OneDrive.'));
     }
 
+    const passos = [
+      linhaCheck({
+        rotulo: 'Armadura verificada',
+        marcado: p.armaduraVerificada,
+        sub: p.armaduraEm ? fmtDataHora(p.armaduraEm) : null,
+        aoTocar: () => alternarArmadura(p),
+      }),
+      p.spda
+        ? linhaCheck({
+          rotulo: 'Rebar SPDA instalado conforme projeto',
+          marcado: !!p.rebarVerificado,
+          sub: p.rebarEm ? fmtDataHora(p.rebarEm) : null,
+          aoTocar: () => alternarRebar(p),
+        })
+        : null,
+      blocoFoto,
+      linhaCheck({
+        rotulo: 'Upload no OneDrive feito',
+        marcado: p.uploadOneDrive,
+        desabilitado: !podeUpload && !p.uploadOneDrive,
+        sub: p.uploadOneDrive ? fmtDataHora(p.uploadEm) : (podeUpload ? null : 'Disponível após os checks e a foto'),
+        aoTocar: () => alternarUpload(p),
+      }),
+    ].filter(Boolean);
+
     ficha.replaceChildren(
       el('div', { class: 'ficha-cabeca' },
         el('h2', {}, p.nome),
-        el('span', { class: `pilula st-${st}` }, STATUS[st].rotulo),
+        el('span', { class: `pilula st-${st}${p.spda && st === 'concluido' ? ' spda-concluido' : ''}` }, rotuloStatus(p)),
+        p.spda ? el('span', { class: 'pilula spda' }, el('span', { class: 'selo-raio' }), 'SPDA') : null,
         el('button', { type: 'button', class: 'btn-icone', 'aria-label': 'Fechar ficha', onclick: fecharFicha }, icone('fechar'))),
       el('p', { class: 'situacao' }, situacao),
-      el('div', { class: 'passo' }, el('span', { class: 'num-passo' }, '1'),
-        linhaCheck({
-          rotulo: 'Armadura verificada',
-          marcado: p.armaduraVerificada,
-          sub: p.armaduraEm ? fmtDataHora(p.armaduraEm) : null,
-          aoTocar: () => alternarArmadura(p),
-        })),
-      el('div', { class: 'passo' }, el('span', { class: 'num-passo' }, '2'), blocoFoto),
-      el('div', { class: 'passo' }, el('span', { class: 'num-passo' }, '3'),
-        linhaCheck({
-          rotulo: 'Upload no OneDrive feito',
-          marcado: p.uploadOneDrive,
-          desabilitado: !podeUpload && !p.uploadOneDrive,
-          sub: p.uploadOneDrive ? fmtDataHora(p.uploadEm) : (podeUpload ? null : 'Disponível após o check e a foto'),
-          aoTocar: () => alternarUpload(p),
-        })));
+      ...passos.map((conteudo, i) => el('div', { class: 'passo' }, el('span', { class: 'num-passo' }, String(i + 1)), conteudo)));
     ficha.hidden = false;
+  }
+
+  // Desmarcar um check desfaz a conferência: apaga a data e desmarca o upload.
+  async function desfazerCheck(p, rotulo, campos) {
+    const ok = await confirmar(
+      `Desmarcar ${rotulo} do ${p.nome}? Isso apaga a data da conferência e desmarca o upload.`,
+      { titulo: 'Desfazer conferência', rotuloOk: 'Desmarcar', perigo: true },
+    );
+    if (!ok) return false;
+    Object.assign(p, campos, { uploadOneDrive: false, uploadEm: null });
+    sincronizarConferencia(p);
+    return true;
   }
 
   async function alternarArmadura(p) {
@@ -650,21 +744,27 @@ async function telaTeto(id) {
       p.armaduraVerificada = true;
       p.armaduraEm = agora();
       // a conferência vale pela data da foto (relevante para fotos antigas carregadas)
-      if (p.fotos.length && !p.dataConferencia) p.dataConferencia = p.fotos[p.fotos.length - 1].tiradaEm;
-    } else {
-      const ok = await confirmar(
-        `Desmarcar a armadura do ${p.nome}? Isso apaga a data da conferência e desmarca o upload.`,
-        { titulo: 'Desfazer conferência', rotuloOk: 'Desmarcar', perigo: true },
-      );
-      if (!ok) return;
-      Object.assign(p, { armaduraVerificada: false, armaduraEm: null, dataConferencia: null, uploadOneDrive: false, uploadEm: null });
+      sincronizarConferencia(p);
+    } else if (!(await desfazerCheck(p, 'a armadura', { armaduraVerificada: false, armaduraEm: null }))) {
+      return;
+    }
+    await salvar(p);
+  }
+
+  async function alternarRebar(p) {
+    if (!p.rebarVerificado) {
+      p.rebarVerificado = true;
+      p.rebarEm = agora();
+      sincronizarConferencia(p);
+    } else if (!(await desfazerCheck(p, 'o rebar SPDA', { rebarVerificado: false, rebarEm: null }))) {
+      return;
     }
     await salvar(p);
   }
 
   async function alternarUpload(p) {
     if (!p.uploadOneDrive) {
-      if (!(p.armaduraVerificada && p.fotos.length)) return;
+      if (!conferenciaCompleta(p)) return;
       p.uploadOneDrive = true;
       p.uploadEm = agora();
     } else {
@@ -687,7 +787,8 @@ async function telaTeto(id) {
     if (!ok) return;
     p.fotos.pop();
     fotosDaSessao.delete(p.id);
-    if (!p.fotos.length) Object.assign(p, { dataConferencia: null, uploadOneDrive: false, uploadEm: null });
+    if (!p.fotos.length) Object.assign(p, { uploadOneDrive: false, uploadEm: null });
+    sincronizarConferencia(p);
     await salvar(p);
   }
 
@@ -739,6 +840,8 @@ async function telaTeto(id) {
         el('img', { class: 'previa-foto', src: url, alt: 'Prévia da foto' }),
         blocoData,
         nomeEl,
+        p.spda ? el('p', { class: 'aviso-spda' }, el('span', { class: 'selo-raio' }),
+          'Pilar com SPDA: a foto deve mostrar o rebar instalado.') : null,
         el('p', { class: 'orientacao' },
           'Use "Salvar em Arquivos" (pasta do OneDrive) ou o app do OneDrive. ',
           el('strong', {}, '"Salvar Imagem" perde o nome do arquivo.'),
@@ -769,7 +872,7 @@ async function telaTeto(id) {
     p.fotos.push(registro);
     // a última foto da lista é sempre a mais recente
     p.fotos.sort((a, b) => a.tiradaEm.localeCompare(b.tiradaEm));
-    if (p.armaduraVerificada && !p.dataConferencia) p.dataConferencia = registro.tiradaEm;
+    sincronizarConferencia(p);
     if (p.fotos[p.fotos.length - 1] === registro) fotosDaSessao.set(p.id, r.foto);
     await salvar(p);
 
@@ -811,9 +914,11 @@ async function telaTeto(id) {
     const r = resumo(pilares);
     const filtros = [['todos', 'Todos', r.total], ...ORDEM_STATUS.map((st) => [st, STATUS[st].rotulo, r[st]])];
     filtros.splice(2, 0, ['semfoto', 'Falta foto', pilares.filter(checkSemFoto).length]);
+    if (r.spda) filtros.push(['spda', 'SPDA', r.spda]);
     const ponto = (chave) => {
       if (chave === 'todos') return null;
       if (chave === 'semfoto') return el('span', { class: 'ponto-st st-pendente sem-foto' });
+      if (chave === 'spda') return el('span', { class: 'selo-raio' });
       return el('span', { class: `ponto-st st-${chave}` });
     };
     filtrosEl.replaceChildren(...filtros.map(([chave, rotulo, n]) => el('button', {
@@ -833,6 +938,7 @@ async function telaTeto(id) {
       .filter((p) => {
         if (lista.filtro === 'todos') return true;
         if (lista.filtro === 'semfoto') return checkSemFoto(p);
+        if (lista.filtro === 'spda') return !!p.spda;
         return statusDo(p) === lista.filtro;
       })
       .filter((p) => !termo || limparNome(p.nome).includes(termo))
@@ -843,9 +949,10 @@ async function telaTeto(id) {
     }
     itensEl.replaceChildren(...visiveis.map((p) => {
       const st = statusDo(p);
-      let sub = STATUS[st].rotulo;
+      let sub = rotuloStatus(p);
       if (p.dataConferencia) sub += ` · ${fmtData(p.dataConferencia)}`;
       else if (checkSemFoto(p)) sub += ' · falta a foto';
+      else if (p.spda && p.armaduraVerificada && !p.rebarVerificado) sub += ' · falta o rebar';
       return el('li', {}, el('button', {
         type: 'button',
         class: 'item-pilar',
@@ -855,9 +962,76 @@ async function telaTeto(id) {
           if (modo === 'conferencia') abrirFicha(p.id);
         },
       },
-      el('span', { class: `ponto-st grande st-${st}${checkSemFoto(p) ? ' sem-foto' : ''}` }),
-      el('span', { class: 'item-texto' }, el('strong', {}, p.nome), el('small', {}, sub))));
+      el('span', { class: `ponto-st grande st-${st}${p.spda && st === 'concluido' ? ' st-spda' : ''}${checkSemFoto(p) ? ' sem-foto' : ''}` }),
+      el('span', { class: 'item-texto' },
+        el('strong', {}, p.nome, p.spda ? el('span', { class: 'selo-raio selo-lista', title: 'SPDA' }) : null),
+        el('small', {}, sub))));
     }));
+  }
+
+  // ---------- SPDA por lista ----------
+  // Cola a lista do projeto de SPDA (ex.: "P01, P6, P4") e marca os pilares deste teto.
+  // "P01" e "P1" contam como o mesmo pilar. Só acrescenta: não desmarca quem não está na lista.
+  async function marcarSpdaPorLista() {
+    const campo = el('textarea', {
+      class: 'campo', rows: '4', placeholder: 'P01, P6, P4, P2, P22…',
+      autocapitalize: 'characters', autocorrect: 'off', spellcheck: 'false',
+    });
+    const texto = await abrirModal({
+      titulo: 'Marcar pilares SPDA por lista',
+      corpo: el('label', { class: 'rotulo-campo' },
+        el('span', {}, `Nomes dos pilares com SPDA em ${teto.codigo}, separados por vírgula, espaço ou linha`), campo),
+      botoes: [
+        { rotulo: 'Cancelar', valor: null },
+        { rotulo: 'Continuar', classe: 'btn-primario', acao: (fechar) => fechar(campo.value) },
+      ],
+      aoAbrir: () => campo.focus(),
+    });
+    if (!texto || !texto.trim()) return;
+
+    const nomes = [...new Set(texto.split(/[\s,;]+/).map((n) => n.trim()).filter(Boolean))];
+    const encontrados = [];
+    const naoEncontrados = [];
+    for (const n of nomes) {
+      const chave = chaveNomePilar(n);
+      const p = pilares.find((x) => chaveNomePilar(x.nome) === chave);
+      if (p) encontrados.push(p);
+      else naoEncontrados.push(n.toUpperCase());
+    }
+    const novos = encontrados.filter((p) => !p.spda);
+    const jaMarcados = encontrados.filter((p) => p.spda);
+    if (!novos.length) {
+      alerta(
+        [
+          jaMarcados.length ? `Já marcados como SPDA: ${jaMarcados.map((p) => p.nome).join(', ')}.` : null,
+          naoEncontrados.length ? `Não encontrados neste teto: ${naoEncontrados.join(', ')}.` : null,
+        ].filter(Boolean).join(' ') || 'Nenhum pilar da lista encontrado.',
+        'SPDA',
+      );
+      return;
+    }
+    const ok = await abrirModal({
+      titulo: 'Confirmar pilares SPDA',
+      corpo: el('div', { class: 'modal-corpo' },
+        el('p', {}, el('strong', {}, `Marcar ${novos.length} pilar(es): `), novos.map((p) => p.nome).sort(compararNatural).join(', ')),
+        novos.some(conferenciaCompleta)
+          ? el('p', { class: 'nota' }, 'Os que já estavam conferidos voltam para pendente até o check do rebar SPDA.')
+          : null,
+        jaMarcados.length ? el('p', { class: 'nota' }, `Já eram SPDA: ${jaMarcados.map((p) => p.nome).join(', ')}`) : null,
+        naoEncontrados.length
+          ? el('p', { class: 'erro' }, `Não encontrados neste teto: ${naoEncontrados.join(', ')}. Confira os nomes ou crie esses pilares no modo Editar planta.`)
+          : null),
+      botoes: [
+        { rotulo: 'Cancelar', valor: false },
+        { rotulo: 'Marcar', classe: 'btn-primario', valor: true },
+      ],
+    });
+    if (!ok) return;
+    for (const p of novos) {
+      definirSpda(p, true);
+      await salvar(p);
+    }
+    toast(`${novos.length} pilar(es) marcados como SPDA`);
   }
 
   // ---------- menu do teto ----------
@@ -867,11 +1041,13 @@ async function telaTeto(id) {
       opcoes: [
         { rotulo: 'Relatório (PDF)', valor: 'relatorio' },
         { rotulo: 'Imagem da planta (PNG)', valor: 'imagem' },
+        { rotulo: 'Marcar pilares SPDA por lista', valor: 'spda' },
         { rotulo: 'Editar teto / trocar prancha', valor: 'editar' },
         { rotulo: 'Cancelar', valor: null },
       ],
     });
     if (op === 'editar') return ir(`#/teto/${teto.id}/editar`);
+    if (op === 'spda') return marcarSpdaPorLista();
     if (op !== 'relatorio' && op !== 'imagem') return;
     const fim = carregando(op === 'relatorio' ? 'Gerando relatório…' : 'Gerando imagem…');
     let arquivo;

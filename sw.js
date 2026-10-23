@@ -1,6 +1,6 @@
 // Service worker: guarda o app inteiro para funcionar offline.
 // A cada versão publicada, AUMENTE o número abaixo (pilares-v2, v3…).
-const VERSAO = 'pilares-v4';
+const VERSAO = 'pilares-v5';
 
 const ARQUIVOS = [
   './',

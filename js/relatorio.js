@@ -2,6 +2,7 @@
 // logo, azul-marinho e dourado; Poppins nos títulos e Open Sans no texto (embutidas).
 import {
   STATUS, statusDo, resumo, fmtData, fmtDataHora, dataISO, compararNatural, bufParaBase64, hexParaRgb,
+  corDoPilar, COR_SPDA_CONCLUIDO,
 } from './util.js';
 
 const ARQUIVOS_FONTE = {
@@ -140,7 +141,25 @@ export async function gerarRelatorio(teto, prancha, pilares) {
     doc.setTextColor(...AZUL);
     doc.text(String(c.valor), x + 4, y + 12.5);
   });
-  y += alt + 7;
+  y += alt + 6;
+
+  // resumo SPDA
+  const temSpda = r.spda > 0;
+  if (temSpda) {
+    const rebarOk = pilares.filter((p) => p.spda && p.rebarVerificado).length;
+    doc.setFillColor(...hexParaRgb(COR_SPDA_CONCLUIDO));
+    doc.rect(M, y - 3, 2.8, 2.8, 'F');
+    const titulo = `Pilares com SPDA: ${r.spda}`;
+    doc.setFont('OpenSans', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(...AZUL);
+    doc.text(titulo, M + 4.5, y - 0.6);
+    const larguraTitulo = doc.getTextWidth(titulo);
+    doc.setFont('OpenSans', 'normal');
+    doc.setTextColor(...CINZA_TEXTO);
+    doc.text(`·  rebar conferido: ${rebarOk}  ·  concluídos (azul): ${r.spdaConcluido}`, M + 4.5 + larguraTitulo + 2, y - 0.6);
+    y += 6;
+  }
 
   // tabela
   const linhas = [...pilares]
@@ -148,22 +167,28 @@ export async function gerarRelatorio(teto, prancha, pilares) {
     .map((p) => {
       const st = statusDo(p);
       const ultima = p.fotos?.[p.fotos.length - 1];
-      return {
-        st,
-        celulas: [
-          p.nome,
-          STATUS[st].rotulo,
-          p.dataConferencia ? fmtData(p.dataConferencia) : '—',
-          ultima ? ultima.nomeArquivo : '—',
-          p.uploadOneDrive ? fmtData(p.uploadEm) : '—',
-        ],
-      };
+      const celulas = [
+        p.nome,
+        STATUS[st].rotulo,
+        p.dataConferencia ? fmtData(p.dataConferencia) : '—',
+        ultima ? ultima.nomeArquivo : '—',
+      ];
+      if (temSpda) celulas.push(p.spda ? (p.rebarVerificado ? 'OK' : 'Pendente') : '—');
+      celulas.push(p.uploadOneDrive ? fmtData(p.uploadEm) : '—');
+      return { cor: corDoPilar(p), celulas };
     });
+
+  const cabecalho = ['Pilar', 'Status', 'Data da conferência', 'Nome da foto'];
+  if (temSpda) cabecalho.push('SPDA (rebar)');
+  cabecalho.push('Upload no OneDrive');
+  const larguras = temSpda
+    ? { 0: { fontStyle: 'bold', cellWidth: 16 }, 2: { cellWidth: 25 }, 4: { cellWidth: 23 }, 5: { cellWidth: 23 } }
+    : { 0: { fontStyle: 'bold', cellWidth: 20 }, 2: { cellWidth: 28 }, 4: { cellWidth: 28 } };
 
   doc.autoTable({
     startY: y,
     margin: { left: M, right: M, bottom: 18 },
-    head: [['Pilar', 'Status', 'Data da conferência', 'Nome da foto', 'Upload no OneDrive']],
+    head: [cabecalho],
     body: linhas.map((l) => l.celulas),
     styles: {
       font: 'OpenSans', fontSize: 9, textColor: CINZA_TEXTO, cellPadding: 1.8,
@@ -172,14 +197,19 @@ export async function gerarRelatorio(teto, prancha, pilares) {
     headStyles: { font: 'OpenSans', fontStyle: 'bold', fillColor: AZUL, textColor: 255 },
     alternateRowStyles: { fillColor: CINZA_CLARO },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 20 },
+      ...larguras,
       1: { cellWidth: 25, cellPadding: { left: 6.5, right: 1.8, top: 1.8, bottom: 1.8 } },
-      2: { cellWidth: 28 },
-      4: { cellWidth: 28 },
+    },
+    didParseCell: (d) => {
+      // coluna SPDA: "OK" em azul, "Pendente" em vermelho
+      if (temSpda && d.section === 'body' && d.column.index === 4 && d.cell.raw !== '—') {
+        d.cell.styles.textColor = d.cell.raw === 'OK' ? AZUL : [179, 38, 30];
+        d.cell.styles.fontStyle = 'bold';
+      }
     },
     didDrawCell: (d) => {
       if (d.section !== 'body' || d.column.index !== 1) return;
-      const cor = STATUS[linhas[d.row.index].st].cor;
+      const cor = linhas[d.row.index].cor;
       doc.setFillColor(...hexParaRgb(cor));
       doc.rect(d.cell.x + 2, d.cell.y + d.cell.height / 2 - 1.4, 2.8, 2.8, 'F');
     },
@@ -199,20 +229,23 @@ export async function gerarRelatorio(teto, prancha, pilares) {
     yl = 20;
   }
   const legenda = [
-    ['pendente', 'sem check da armadura ou sem foto'],
-    ['conferido', 'armadura verificada e foto tirada; upload no OneDrive pendente'],
-    ['concluido', 'armadura verificada, foto tirada e upload no OneDrive feito'],
+    [STATUS.pendente.cor, STATUS.pendente.rotulo, temSpda ? 'falta check (armadura/rebar) ou foto' : 'sem check da armadura ou sem foto'],
+    [STATUS.conferido.cor, STATUS.conferido.rotulo, 'checks e foto feitos; upload no OneDrive pendente'],
+    [STATUS.concluido.cor, STATUS.concluido.rotulo, 'armadura verificada, foto tirada e upload no OneDrive feito'],
   ];
+  if (temSpda) {
+    legenda.push([COR_SPDA_CONCLUIDO, 'Concluído SPDA', 'pilar com SPDA: armadura, rebar, foto e upload feitos']);
+  }
   doc.setFontSize(8.5);
-  for (const [st, texto] of legenda) {
-    doc.setFillColor(...hexParaRgb(STATUS[st].cor));
+  for (const [cor, rotulo, texto] of legenda) {
+    doc.setFillColor(...hexParaRgb(cor));
     doc.rect(M, yl - 2.4, 2.8, 2.8, 'F');
     doc.setFont('OpenSans', 'bold');
     doc.setTextColor(...CINZA_TEXTO);
-    doc.text(STATUS[st].rotulo, M + 4.5, yl);
+    doc.text(rotulo, M + 4.5, yl);
     doc.setFont('OpenSans', 'normal');
     doc.setTextColor(...CINZA_MEDIO);
-    doc.text(`— ${texto}`, M + 22, yl);
+    doc.text(`— ${texto}`, M + 30, yl);
     yl += 4.8;
   }
 

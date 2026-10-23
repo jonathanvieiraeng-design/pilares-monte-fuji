@@ -7,26 +7,63 @@ export const STATUS = {
 };
 export const ORDEM_STATUS = ['pendente', 'conferido', 'concluido'];
 
+// Pilar com SPDA (rebar do projeto de SPDA): concluído fica azul em vez de verde.
+export const COR_SPDA_CONCLUIDO = '#1F78D1';
+
 // Limites de canvas do Safari no iOS. Acima disso o canvas fica em branco sem erro.
 export const LIMITE_LADO = 4096;
 export const LIMITE_AREA = 16777216;
 
+const temFoto = (p) => !!(p.fotos && p.fotos.length);
+
+// Checks feitos: armadura e, no pilar SPDA, também o rebar.
+export function checksCompletos(p) {
+  return !!p.armaduraVerificada && (!p.spda || !!p.rebarVerificado);
+}
+
+// Conferência completa: checks + foto.
+export function conferenciaCompleta(p) {
+  return checksCompletos(p) && temFoto(p);
+}
+
 // Status é sempre derivado dos dados, nunca gravado.
 export function statusDo(p) {
-  const temFoto = p.fotos && p.fotos.length > 0;
-  if (!p.armaduraVerificada || !temFoto) return 'pendente';
+  if (!conferenciaCompleta(p)) return 'pendente';
   return p.uploadOneDrive ? 'concluido' : 'conferido';
 }
 
+export function corDoPilar(p) {
+  const st = statusDo(p);
+  return p.spda && st === 'concluido' ? COR_SPDA_CONCLUIDO : STATUS[st].cor;
+}
+
+export function rotuloStatus(p) {
+  const st = statusDo(p);
+  return p.spda && st === 'concluido' ? 'Concluído (SPDA)' : STATUS[st].rotulo;
+}
+
+// Checks feitos, só falta a foto (o pilar continua cinza).
 export function checkSemFoto(p) {
-  return !!p.armaduraVerificada && !(p.fotos && p.fotos.length);
+  return checksCompletos(p) && !temFoto(p);
 }
 
 export function resumo(pilares) {
-  const r = { total: pilares.length, pendente: 0, conferido: 0, concluido: 0 };
-  for (const p of pilares) r[statusDo(p)]++;
+  const r = { total: pilares.length, pendente: 0, conferido: 0, concluido: 0, spda: 0, spdaConcluido: 0 };
+  for (const p of pilares) {
+    const st = statusDo(p);
+    r[st]++;
+    if (p.spda) {
+      r.spda++;
+      if (st === 'concluido') r.spdaConcluido++;
+    }
+  }
   r.pct = r.total ? Math.round((r.concluido / r.total) * 100) : 0;
   return r;
+}
+
+// Chave para comparar nomes digitados de formas diferentes: "P01", "p 1" e "P-1" → "P1".
+export function chaveNomePilar(nome) {
+  return limparNome(nome).replace(/-/g, '').replace(/(^|\D)0+(\d)/g, '$1$2');
 }
 
 export function uid() {

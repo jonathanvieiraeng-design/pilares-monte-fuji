@@ -52,6 +52,7 @@
   --st-conferido: #F2C200;
   --st-conferido-borda: #C79A00;
   --st-concluido: #2E9E4F;
+  --st-spda: #1F78D1;
   --raio: 12px;
   --sombra: 0 8px 28px rgba(0, 0, 0, 0.22);
   --seg-topo: env(safe-area-inset-top, 0px);
@@ -249,6 +250,47 @@ a { color: inherit; text-decoration: none; }
 .ponto-st.st-conferido { background: var(--st-conferido); }
 .ponto-st.st-concluido { background: var(--st-concluido); }
 .ponto-st.sem-foto { border: 2px dashed var(--st-conferido-borda); }
+.ponto-st.st-spda { background: var(--st-spda); }
+.selo-raio {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  vertical-align: -3px;
+  flex: none;
+  background: var(--primario) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23F2C200' d='M13.5 2L5 13.5h5.5L9.5 22 19 9.5h-5.8z'/%3E%3C/svg%3E") center / 12px no-repeat;
+}
+.pilula.spda { background: var(--primario); color: #fff; display: inline-flex; align-items: center; gap: 4px; }
+.pilula.spda .selo-raio { width: 14px; height: 14px; background-size: 11px; }
+.pilula.st-concluido.spda-concluido { background: var(--st-spda); }
+.selo-lista { margin-left: 6px; }
+.chip-spda { color: var(--primario); }
+.chip-spda .selo-raio { width: 15px; height: 15px; background-size: 11px; }
+.opcao-spda {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  background: var(--superficie-2);
+  cursor: pointer;
+}
+.opcao-spda > span:last-child { display: flex; flex-direction: column; }
+.opcao-spda small { color: var(--texto-2); font-size: 13px; }
+.caixa-spda { width: 22px; height: 22px; accent-color: var(--primario); flex: none; margin: 0; }
+.aviso-spda {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #E8F1FB;
+  color: var(--primario);
+  font-size: 14px;
+  font-weight: 600;
+}
+textarea.campo { resize: vertical; min-height: 96px; }
 .chip-sem-foto { color: var(--st-conferido-borda); }
 .chip-sem-foto .ponto-st.sem-foto { width: 13px; height: 13px; }
 .chip-sem-foto .icone { width: 15px; height: 15px; margin-left: -1px; }
@@ -414,6 +456,23 @@ a { color: inherit; text-decoration: none; }
 .marcador.st-conferido .ponto { background: var(--st-conferido); }
 .marcador.st-concluido .ponto { background: var(--st-concluido); }
 .marcador.sem-foto .ponto { border: 3px dashed var(--st-conferido); }
+.marcador.spda.st-concluido .ponto { background: var(--st-spda); }
+
+/* selo de raio do pilar com SPDA */
+.marcador .raio { display: none; }
+.marcador.spda .raio {
+  display: block;
+  position: absolute;
+  left: 3px;
+  top: -19px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--primario) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23F2C200' d='M13.5 2L5 13.5h5.5L9.5 22 19 9.5h-5.8z'/%3E%3C/svg%3E") center / 11px no-repeat;
+  box-shadow: 0 0 0 1.5px #fff;
+  pointer-events: none;
+}
+.marcador.spda .rotulo { left: 20px; }
 .marcador.movendo .ponto { transform: scale(1.5); box-shadow: 0 0 0 3px #222, 0 4px 10px rgba(0, 0, 0, 0.5); }
 .marcador.destaque .ponto { animation: pulso 0.8s ease-in-out 3; }
 @keyframes pulso { 50% { transform: scale(1.8); box-shadow: 0 0 0 4px rgba(34, 34, 34, 0.6); } }
